@@ -12,7 +12,7 @@
 #include <stdlib.h> // For abs
 
 // --- SECURITY CONFIGURATION ---
-#define DDOS_RATE_LIMIT_MS   1000
+#define DDOS_RATE_LIMIT_MS   500
 #define MAX_TRACKED_NODES    MAX_NEIGHBOURS
 
 // Physics tolerance: How much faster than MAX_SPEED can a node seemingly move 

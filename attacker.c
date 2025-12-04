@@ -34,39 +34,33 @@ static NeighbourState create_base_packet(void)
 
 // -----------------------------------------------------------------------------
 // Attack 1: FLOODING (DDoS)
-// Sends packets at 20Hz (50ms interval) with garbage data (unsigned).
+// Sends packets at 50Hz (20ms interval) with VALID signature and fixed state.
+// This forces the receiver to verify the crypto, then reject based on Rate Limit.
 // -----------------------------------------------------------------------------
 static void run_flood_attack(QueueHandle_t attack_q)
 {
-    fast_log("ATTACK (I): Starting FLOOD (DDoS) attack...");
+    fast_log("ATTACK (I): Starting FLOOD (DDoS) attack (Signed)...");
     
     NeighbourState pkt = create_base_packet();
     
-    // Send 200 packets rapidly
+    // Send 1000 packets rapidly
     for (int i = 0; i < 1000; ++i) {
         pkt.seq_number++;
         get_current_unix_time(&pkt.ts_s, &pkt.ts_ms);
         
-        // --- CHANGE: NO SIGNATURE ---
-        // We don't sign. We just spam random data.
-        // This validates that the system still has to process the packet
-        // (receive -> queue -> security check) before rejecting it.
-        
-        // Randomize payload to look like "random spam"
-        pkt.x_mm = rand(); 
-        pkt.y_mm = rand();
-        pkt.z_mm = rand();
-        
-        // Fill tag with junk
-        pkt.mac_tag[0] = rand() % 0xFF;
-        pkt.mac_tag[1] = rand() % 0xFF;
-        pkt.mac_tag[2] = rand() % 0xFF;
-        pkt.mac_tag[3] = rand() % 0xFF;
+        // --- RESTORED: VALID SIGNATURE ---
+        // We sign the packet correctly. This passes the Crypto check on the receiver.
+        // The receiver must then use the Rate Limiter (Security Table) to drop it.
+        sign_packet(&pkt);
+
+        // --- RESTORED: FIXED POS/VEL ---
+        // We do NOT randomize positions. We keep the static values from create_base_packet.
+        // (x=50000, y=50000, z=1000)
 
         // Push to radio
         xQueueSend(attack_q, &pkt, 0);
 
-        // Wait only 50ms (20Hz) -> Should trigger Rate Limiter on Receiver
+        // Wait only 20ms (50Hz) -> Should trigger Rate Limiter on Receiver (limit is ~200ms)
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     
@@ -143,7 +137,7 @@ static void attacker_task(void *arg)
     while (true) {
         // 1. Flood Attack
         run_flood_attack(get_attack_queue()); 
-        vTaskDelay(pdMS_TO_TICKS(5000)); // Rest
+        vTaskDelay(pdMS_TO_TICKS(10000)); // Rest
 
         // 2. Replay Attack
         run_replay_attack(get_attack_queue());

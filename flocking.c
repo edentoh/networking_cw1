@@ -73,15 +73,10 @@ static void update_neighbour_table(const NeighbourState *n)
         return;
     }
 
-    // -------------------------------------------------------------------------
-    // SECURITY VALIDATION (Centralized)
-    // Checks: Protocol Ver, Rate Limit, Replay, Physics/Teleport
-    // -------------------------------------------------------------------------
-    if (!security_validate_packet(n)) {
-        // Log handled inside security.c
-        return;
-    }
-    // -------------------------------------------------------------------------
+    // --- REMOVED SECURITY CHECK HERE ---
+    // It is now handled in comms_lora.cpp to save queue space
+    // and prevent double-counting rate limits.
+    // -----------------------------------
 
     int first_empty = -1;
     uint32_t now_s; uint16_t now_ms;
@@ -92,7 +87,6 @@ static void update_neighbour_table(const NeighbourState *n)
             memcmp(NEIGHBOUR_TABLE[i].neighbour_state.node_id,
                    n->node_id, sizeof(n->node_id)) == 0) {
 
-            // We still do a basic seq check here for the flocking logic
             if (n->seq_number > NEIGHBOUR_TABLE[i].neighbour_state.seq_number) {
                 NEIGHBOUR_TABLE[i].neighbour_state = *n;
                 NEIGHBOUR_TABLE[i].last_updated_s  = now_s;
