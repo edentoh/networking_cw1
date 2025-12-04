@@ -62,7 +62,7 @@
 // Flocking Gains (Tunable)
 #define FLOCKING_ALIGNMENT_GAIN         0.1
 #define FLOCKING_COHESION_GAIN          0.08
-#define FLOCKING_SEPARATION_GAIN        5.0
+#define FLOCKING_SEPARATION_GAIN        8.0
 
 // =============================================================================
 //  5. LOGGING CONFIGURATION
@@ -126,7 +126,7 @@
 
 // Set to 1 to enable Attack Mode (Flood/Replay/Spoof)
 // Set to 0 to run as a normal compliant drone
-#define ENABLE_ATTACK_TASK        1
+#define ENABLE_ATTACK_TASK      0
 #define ATTACK_TASK_NAME       "attacker"
 #define ATTACK_MEM             4096
 #define ATTACK_PRIORITY        4  // Lower than Radio/Physics to not starve them

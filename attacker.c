@@ -137,11 +137,11 @@ static void attacker_task(void *arg)
     while (true) {
         // 1. Flood Attack
         run_flood_attack(get_attack_queue()); 
-        vTaskDelay(pdMS_TO_TICKS(10000)); // Rest
+        vTaskDelay(pdMS_TO_TICKS(15000)); // Rest
 
         // 2. Replay Attack
         run_replay_attack(get_attack_queue());
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(10000));
 
         // 3. Spoof Attack
         run_spoof_attack(get_attack_queue());
