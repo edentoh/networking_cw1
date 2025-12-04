@@ -12,10 +12,10 @@
     #define WIFI_SSID        "eduroam"
     #define EDUROAM_IDENTITY "zcabbzt@ucl.ac.uk"
     #define EDUROAM_USERNAME "zcabbzt@ucl.ac.uk"
-    #define EDUROAM_PASSWORD "EdenT@h313032bz."
+    #define EDUROAM_PASSWORD ""
 #else
-    #define WIFI_SSID        "EE-32GFKZ"
-    #define WIFI_PASSWORD    "a9J7Fy9Wd6yJUDi9"
+    #define WIFI_SSID        ""
+    #define WIFI_PASSWORD    ""
 #endif
 
 #define WIFI_CONNECT_TIMEOUT_MS 30000
@@ -129,4 +129,5 @@
 #define ENABLE_ATTACK_TASK        1
 #define ATTACK_TASK_NAME       "attacker"
 #define ATTACK_MEM             4096
+
 #define ATTACK_PRIORITY        4  // Lower than Radio/Physics to not starve them
