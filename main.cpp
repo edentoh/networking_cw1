@@ -8,6 +8,9 @@ extern "C" {
 #include "tasks.h"
 }
 
+// Ensure init_attacker is declared if tasks.h doesn't have it yet
+extern "C" void init_attacker(void);
+
 extern "C" void app_main(void)
 {
     logger_init();
@@ -20,15 +23,22 @@ extern "C" void app_main(void)
     }
 
     if (sync_time() != ESP_OK) {
-        fast_log("MAIN (W): time sync failed, continuing with unsynchronised time");
-        // carry on anyway – timestamps will just be relative
+        fast_log("MAIN (W): time sync failed, continuing");
     }
 
     init_flocking();
     init_physics();
     init_radio();
-    // enable if you need MQTT
     init_mqtt_telemetry();
+
+    // Attack task conditional init
+#if ENABLE_ATTACK_TASK
+    fast_log("MAIN (W): !!! ATTACK MODE ENABLED !!!");
+    init_attacker();
+#else
+    fast_log("MAIN (I): Attack mode disabled (Normal Operation)");
+#endif
+    // -----------------------------
 
     fast_log("MAIN (I): all tasks started");
 }

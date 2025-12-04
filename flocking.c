@@ -16,6 +16,37 @@ typedef struct {
 
 static NeighbourEntry NEIGHBOUR_TABLE[MAX_NEIGHBOURS];
 
+// -----------------------------------------------------------------------------
+// Helper: Dump the whole table
+// -----------------------------------------------------------------------------
+static void print_neighbour_table_dump(void)
+{
+    fast_log("=== NEIGHBOUR TABLE (Every 5s) ===");
+    
+    int count = 0;
+    uint32_t now_s; uint16_t now_ms;
+    get_current_unix_time(&now_s, &now_ms);
+
+    for (int i = 0; i < MAX_NEIGHBOURS; ++i) {
+        if (NEIGHBOUR_TABLE[i].is_valid) {
+            const NeighbourState *n = &NEIGHBOUR_TABLE[i].neighbour_state;
+            uint32_t age = now_s - NEIGHBOUR_TABLE[i].last_updated_s;
+
+            fast_log(" [%d] MAC=%s | Age=%us | Pos=(%u, %u, %u)", 
+                     i,
+                     format_mac(n->node_id),
+                     (unsigned)age,
+                     (unsigned)n->x_mm, (unsigned)n->y_mm, (unsigned)n->z_mm);
+            count++;
+        }
+    }
+
+    if (count == 0) {
+        fast_log(" (Table is empty)");
+    }
+    fast_log("==================================");
+}
+
 static void prune_stale_neighbours(void)
 {
     uint32_t now_s; uint16_t now_ms;
@@ -37,20 +68,31 @@ static void prune_stale_neighbours(void)
 
 static void update_neighbour_table(const NeighbourState *n)
 {
-    int first_empty = -1;
-    uint32_t now_s; uint16_t now_ms;
-    get_current_unix_time(&now_s, &now_ms);
     // Don't treat ourselves as a neighbour
     if (memcmp(n->node_id, get_mac_address(), 6) == 0) {
         return;
     }
+
+    // -------------------------------------------------------------------------
+    // SECURITY VALIDATION (Centralized)
+    // Checks: Protocol Ver, Rate Limit, Replay, Physics/Teleport
+    // -------------------------------------------------------------------------
+    if (!security_validate_packet(n)) {
+        // Log handled inside security.c
+        return;
+    }
+    // -------------------------------------------------------------------------
+
+    int first_empty = -1;
+    uint32_t now_s; uint16_t now_ms;
+    get_current_unix_time(&now_s, &now_ms);
 
     for (int i = 0; i < MAX_NEIGHBOURS; ++i) {
         if (NEIGHBOUR_TABLE[i].is_valid &&
             memcmp(NEIGHBOUR_TABLE[i].neighbour_state.node_id,
                    n->node_id, sizeof(n->node_id)) == 0) {
 
-            // Simple seq check: ignore old packets
+            // We still do a basic seq check here for the flocking logic
             if (n->seq_number > NEIGHBOUR_TABLE[i].neighbour_state.seq_number) {
                 NEIGHBOUR_TABLE[i].neighbour_state = *n;
                 NEIGHBOUR_TABLE[i].last_updated_s  = now_s;
@@ -61,12 +103,13 @@ static void update_neighbour_table(const NeighbourState *n)
             first_empty = i;
     }
 
-    int idx = (first_empty >= 0) ? first_empty : 0; // simple eviction
+    int idx = (first_empty >= 0) ? first_empty : 0;
     NEIGHBOUR_TABLE[idx].is_valid = true;
     NEIGHBOUR_TABLE[idx].last_updated_s = now_s;
     NEIGHBOUR_TABLE[idx].neighbour_state = *n;
 }
 
+// ... (Rest of file: compute_control, flocking_task, init_flocking remain unchanged) ...
 static ControlInput compute_control(const DroneState *self)
 {
     ControlInput u = {
@@ -97,17 +140,26 @@ static ControlInput compute_control(const DroneState *self)
         ++count;
         double dist = sqrt(dist2) + 1e-6;
 
-        // separation
-        sep_x -= dx / dist;
-        sep_y -= dy / dist;
-        sep_z -= dz / dist;
+        // --- Improved Separation (Distance Weighted) ---
+        double nx = -dx / dist;
+        double ny = -dy / dist;
+        double nz = -dz / dist;
 
-        // alignment
+        double weight = 0.0;
+        if (dist < SEPARATION_RADIUS_MM) {
+             weight = (SEPARATION_RADIUS_MM - dist) / SEPARATION_RADIUS_MM;
+        }
+
+        sep_x += nx * weight;
+        sep_y += ny * weight;
+        sep_z += nz * weight;
+
+        // Alignment
         ali_vx += n->vx_mm_s;
         ali_vy += n->vy_mm_s;
         ali_vz += n->vz_mm_s;
 
-        // cohesion (positions)
+        // Cohesion
         coh_x += n->x_mm;
         coh_y += n->y_mm;
         coh_z += n->z_mm;
@@ -133,9 +185,7 @@ static ControlInput compute_control(const DroneState *self)
                           + FLOCKING_COHESION_GAIN   * coh_z;
     }
 
-    // -------------------------------------------------------------------------
-    // Speed Limiting
-    // -------------------------------------------------------------------------
+    // Speed Limit
     double v2 = u.target_vx_mm_s*u.target_vx_mm_s +
                 u.target_vy_mm_s*u.target_vy_mm_s +
                 u.target_vz_mm_s*u.target_vz_mm_s;
@@ -148,41 +198,26 @@ static ControlInput compute_control(const DroneState *self)
         u.target_vz_mm_s *= scale;
     }
 
-    // -------------------------------------------------------------------------
-    // NEW: Compute Yaw (Face Velocity Strategy)
-    // -------------------------------------------------------------------------
-    // Only update yaw if we are moving significantly (> 50 mm/s)
-    // otherwise atan2 becomes unstable and the drone jitters.
+    // Yaw Control (Face Velocity)
     double speed_sq = u.target_vx_mm_s*u.target_vx_mm_s + 
                       u.target_vy_mm_s*u.target_vy_mm_s;
 
     if (speed_sq > (50.0 * 50.0)) {
-        // 1. Calculate the desired heading based on velocity vector
-        // atan2 returns radians between -pi and pi
         double target_heading_rad = atan2(u.target_vy_mm_s, u.target_vx_mm_s);
         double target_heading_deg = target_heading_rad * (180.0 / M_PI);
-
-        // 2. Get current heading in degrees
         double current_heading_deg = (double)self->yaw_cd / 100.0;
-
-        // 3. Calculate error (shortest path)
         double error_deg = target_heading_deg - current_heading_deg;
         
-        // Normalize to [-180, 180]
         while (error_deg > 180.0)  error_deg -= 360.0;
         while (error_deg < -180.0) error_deg += 360.0;
 
-        // 4. Proportional Controller (Gain = 2.0 works well for responsiveness)
-        // Output is in centi-degrees/sec
         double kP_yaw = 2.0; 
         u.target_yaw_rate_cd_s = (int32_t)(error_deg * kP_yaw * 100.0);
         
-        // Clamp yaw rate (e.g., max 90 deg/s = 9000 cd/s)
         if (u.target_yaw_rate_cd_s > 9000) u.target_yaw_rate_cd_s = 9000;
         if (u.target_yaw_rate_cd_s < -9000) u.target_yaw_rate_cd_s = -9000;
 
     } else {
-        // If hovering/moving slowly, hold current heading (rate = 0)
         u.target_yaw_rate_cd_s = 0;
     }
 
@@ -201,33 +236,40 @@ static void flocking_task(void *arg)
     TickType_t next   = xTaskGetTickCount();
 
     DroneState self = {0};
+    
+    // Timer for printing the table (counts task ticks)
+    int table_print_timer = 0;
+    const int PRINT_INTERVAL_TICKS = 5 * FLOCKING_FREQ_HZ; // 5 seconds * 10Hz = 50
 
     while (true) {
         vTaskDelayUntil(&next, period);
 
         prune_stale_neighbours();
 
-        // ingest neighbour updates (drain quickly)
+        // 1. Ingest updates (WITHOUT individual logging)
         NeighbourState n;
         while (xQueueReceive(neigh_q, &n, 0) == pdTRUE) {
             update_neighbour_table(&n);
-            log_neighbour_state("FLOCKING NEIGH UPDATE", &n);
         }
 
-
-        // latest own state
+        // 2. Compute Control
         if (xQueueReceive(state_q, &self, 0) == pdTRUE) {
             ControlInput u = compute_control(&self);
             xQueueOverwrite(control_q, &u);
 
             static int tick = 0;
             tick++;
-            if (tick % 10 == 0) {  // every ~1 s at 10 Hz
+            if (tick % 20 == 0) {  // every 10 is 1s(10hz)
+                // Keep the own state log
                 log_drone_state("FLOCKING OWN", &self);
-                fast_log("FLOCKING CMD: vx=%.1f vy=%.1f vz=%.1f yaw_rate=%.1f",
-                        u.target_vx_mm_s, u.target_vy_mm_s,
-                        u.target_vz_mm_s, u.target_yaw_rate_cd_s);
             }
+        }
+
+        // 3. Periodic Table Dump (Every 5 seconds)
+        table_print_timer++;
+        if (table_print_timer >= PRINT_INTERVAL_TICKS) {
+            print_neighbour_table_dump();
+            table_print_timer = 0;
         }
     }
 }

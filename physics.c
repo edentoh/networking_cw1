@@ -34,16 +34,29 @@ static void physics_task(void *arg)
     while (true) {
         vTaskDelayUntil(&next_wake, period_ticks);
 
+// ... inside physics_task while(true) loop ...
+
         // New command?
         if (xQueueReceive(control_q, &u, 0) == pdTRUE) {
-            s.vx_mm_s        = u.target_vx_mm_s;
-            s.vy_mm_s        = u.target_vy_mm_s;
-            s.vz_mm_s        = u.target_vz_mm_s;
-            s.yaw_rate_cd_s  = u.target_yaw_rate_cd_s;
+            // Don't set velocity directly. Store the target.
+            // We can just use 'u' as the target reference.
         }
 
         double dt = PHYSICS_PERIOD_MS / 1000.0;
+        
+        // --- SMOOTHING / INERTIA ---
+        // Alpha determines responsiveness. 
+        // 0.1 = heavy/slow, 0.5 = snappy, 1.0 = instant (current behavior)
+        const double alpha = 0.2; 
 
+        s.vx_mm_s += (u.target_vx_mm_s - s.vx_mm_s) * alpha;
+        s.vy_mm_s += (u.target_vy_mm_s - s.vy_mm_s) * alpha;
+        s.vz_mm_s += (u.target_vz_mm_s - s.vz_mm_s) * alpha;
+        
+        // Yaw rate is usually snappy, but we can smooth it too if desired
+        s.yaw_rate_cd_s += (u.target_yaw_rate_cd_s - s.yaw_rate_cd_s) * alpha;
+
+        // Position Integration
         s.x_mm   += s.vx_mm_s * dt;
         s.y_mm   += s.vy_mm_s * dt;
         s.z_mm   += s.vz_mm_s * dt;

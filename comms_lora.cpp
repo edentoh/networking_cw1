@@ -21,7 +21,7 @@ static constexpr int PIN_LORA_DIO0 = 26;
 static constexpr int PIN_LORA_DIO1 = 33;
 
 // Radio params (match coursework defaults)
-static constexpr float   LORA_FREQ_MHZ = 868.1f;
+static constexpr float   LORA_FREQ_MHZ = 868.2f;
 static constexpr float   LORA_BW_KHZ   = 250.0f;
 static constexpr uint8_t LORA_SF       = 9;
 static constexpr uint8_t LORA_CR       = 7;
@@ -36,6 +36,9 @@ static SX1276 lora(new Module(&hal, PIN_LORA_CS, PIN_LORA_DIO0,
 
 static SemaphoreHandle_t RX_SEM = nullptr;
 static uint16_t PACKET_SEQ = 0;
+
+// NEW: Track radio state to distinguish RX vs TX interrupts
+static volatile bool s_transmitting = false; 
 
 extern "C" void IRAM_ATTR give_rx_semaphore(void)
 {
@@ -54,75 +57,121 @@ static void radio_task(void *arg)
     QueueHandle_t neigh_q   = get_neighbour_update_queue();
 
     DroneState self{};
-    // Wait for first state
+    // Wait for first state so we have something to send
     xQueueReceive(state_q, &self, portMAX_DELAY);
 
     const TickType_t tx_period = pdMS_TO_TICKS(RADIO_TX_PERIOD_MS);
     TickType_t next_tx = xTaskGetTickCount() + tx_period;
 
-    // Start in RX mode
+    // 1. Initial State: Always be listening
     lora.startReceive();
+    s_transmitting = false;
+
+    QueueHandle_t attack_q = get_attack_queue(); // <--- GET QUEUE
 
     while (true) {
-        // --------- WAIT FOR RX OR NEXT TX TIME ---------
+        
+        // ----------------------------------------------------------------
+        // 1. CHECK FOR ATTACK PACKETS (High Priority Injection)
+        // ----------------------------------------------------------------
+        NeighbourState attack_pkt;
+        if (xQueueReceive(attack_q, &attack_pkt, 0) == pdTRUE) {
+            
+            // Abort any RX, transmit immediately
+            int16_t res = lora.startTransmit((uint8_t*)&attack_pkt, sizeof(attack_pkt));
+            if (res == RADIOLIB_ERR_NONE) {
+                // log_neighbour_state("ATTACK TX", &attack_pkt); // Optional log
+                s_transmitting = true;
+            }
+            
+            // Loop immediately to send next attack packet (don't wait for timeouts)
+            // But we must wait for this specific TX to finish or we will overwrite it.
+            // Simple approach: Wait for the TX_DONE interrupt here
+            while(s_transmitting) {
+                if (xSemaphoreTake(RX_SEM, pdMS_TO_TICKS(100)) == pdTRUE) {
+                    if (s_transmitting) {
+                         s_transmitting = false;
+                         lora.startReceive(); // Back to RX
+                    }
+                }
+            }
+            continue; // Skip the normal RX/TX logic for this iteration
+        }
+        // Calculate how long to wait until the next scheduled TX
         TickType_t now = xTaskGetTickCount();
         TickType_t wait_ticks = (next_tx > now) ? (next_tx - now) : 0;
 
-        // Block until we either get an RX interrupt or it's time to TX
+        // Block here until:
+        // A) An interrupt occurs (RX packet OR TX finished)
+        // B) The timeout expires (Time to send next packet)
         if (xSemaphoreTake(RX_SEM, wait_ticks) == pdTRUE) {
-            // ---------- HANDLE RX ----------
-            NeighbourState rx{};
-            int16_t r = lora.readData((uint8_t*)&rx, sizeof(rx));
+            
+            // --- EVENT DETECTED (Interrupt) ---
+            
+            if (s_transmitting) {
+                // CASE 1: We were transmitting, so this is a "TX Done" event
+                s_transmitting = false;
+                //fast_log("RADIO (I): TX complete");
 
-            if (r == RADIOLIB_ERR_NONE) {
-                if (verify_packet(&rx)) {
-                    // ignore our own packets (we're not our own neighbour)
-                    if (memcmp(rx.node_id, get_mac_address(), 6) == 0) {
-                        //fast_log("RADIO (I): RX own packet (ignored) node=%s",
-                                 //get_mac_address_string());
-                    } else {
-                        log_radio_packet("RX", &rx);
-                        xQueueSend(neigh_q, &rx, 0);
-                    }
-                } else {
-                    fast_log("RADIO (W): bad MAC from %s",
-                             format_mac(rx.node_id));
-                }
+                // CRITICAL: Switch immediately back to RX to catch incoming packets
+                lora.startReceive();
+                
             } else {
-                fast_log("RADIO (W): readData error (%d)", r);
+                // CASE 2: We were receiving, so this is an "RX Done" event
+                NeighbourState rx{};
+                // readData clears the IRQ flags automatically
+                int16_t r = lora.readData((uint8_t*)&rx, sizeof(rx));
+
+                if (r == RADIOLIB_ERR_NONE) {
+                    if (verify_packet(&rx)) {
+                        if (memcmp(rx.node_id, get_mac_address(), 6) != 0) {
+                            log_radio_packet("RX", &rx);
+                            xQueueSend(neigh_q, &rx, 0);
+                        }
+                    } else {
+                        fast_log("RADIO (W): bad MAC from %s", format_mac(rx.node_id));
+                    }
+                } else if (r != RADIOLIB_ERR_CRC_MISMATCH) {
+                     // CRC errors are common in LoRa, only log other weird errors
+                    fast_log("RADIO (W): readData error (%d)", r);
+                }
+
+                // Resume RX immediately
+                lora.startReceive();
             }
 
-            // Go back to RX mode for further packets
-            lora.startReceive();
-            // loop back; TX will be handled when timeout hits
-            continue;
-        }
-
-        // --------- TIMEOUT: DO TX NOW ---------
-        now = xTaskGetTickCount();
-        if ((TickType_t)(now - next_tx) < (TickType_t)0) {
-            // Spurious wake; it's not TX time yet
-            continue;
-        }
-
-        // Refresh latest state if available
-        xQueueReceive(state_q, &self, 0);
-
-        NeighbourState tx = DroneState_to_NeighbourState(&self, PACKET_SEQ++);
-        sign_packet(&tx);
-
-        int16_t res = lora.transmit((uint8_t*)&tx, sizeof(tx));
-        if (res == RADIOLIB_ERR_NONE) {
-            log_neighbour_state("RADIO TX", &tx);
         } else {
-            fast_log("RADIO (E): TX failed (%d)", res);
+            
+            // --- TIMEOUT (Time to Transmit) ---
+
+            // 1. Update latest state
+            xQueueReceive(state_q, &self, 0);
+
+            // 2. Prepare Packet
+            NeighbourState tx = DroneState_to_NeighbourState(&self, PACKET_SEQ++);
+            sign_packet(&tx);
+
+            // 3. Start Non-Blocking Transmission
+            // This aborts the current RX mode, switches to TX, and returns immediately.
+            // When sending finishes, the interrupt will fire, and we handle it above.
+            int16_t res = lora.startTransmit((uint8_t*)&tx, sizeof(tx));
+
+            if (res == RADIOLIB_ERR_NONE) {
+                log_neighbour_state("RADIO TX ", &tx);
+                s_transmitting = true; // Mark that we are now busy sending
+            } else {
+                fast_log("RADIO (E): StartTransmit failed (%d)", res);
+                // If TX failed to start, go back to RX immediately to not lose connectivity
+                lora.startReceive();
+                s_transmitting = false;
+            }
+
+            // 4. Schedule next TX
+            // (Make sure we advance next_tx even if we missed the deadline slightly)
+            while (next_tx <= xTaskGetTickCount()) {
+                next_tx += tx_period;
+            }
         }
-
-        // After TX, go back to RX immediately
-        lora.startReceive();
-
-        // Schedule next TX time
-        next_tx = now + tx_period;
     }
 }
 

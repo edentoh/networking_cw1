@@ -1,9 +1,12 @@
-// This file contains various task configuration values
+// main/config.h
+#pragma once
 
-// ------------------------------------------------------------ WiFi
-// 0 - Home WiFi
-// 1 - Eduroam
-#define USE_EDUROAM 1
+// =============================================================================
+//  1. WIFI & NETWORK CONFIGURATION
+// =============================================================================
+
+// 0 - Home WiFi, 1 - Eduroam
+#define USE_EDUROAM 0
 
 #if USE_EDUROAM
     #define WIFI_SSID        "eduroam"
@@ -11,148 +14,119 @@
     #define EDUROAM_USERNAME "zcabbzt@ucl.ac.uk"
     #define EDUROAM_PASSWORD "EdenT@h313032bz."
 #else
-    #define WIFI_SSID     "wifi"
-    #define WIFI_PASSWORD "123456789"
+    #define WIFI_SSID        "EE-32GFKZ"
+    #define WIFI_PASSWORD    "a9J7Fy9Wd6yJUDi9"
 #endif
 
 #define WIFI_CONNECT_TIMEOUT_MS 30000
 
+// =============================================================================
+//  2. MQTT BROKER CONFIGURATION
+// =============================================================================
 
-// ------------------------------------------------------------ MQTT broker config
-// Main names:
-#define BROKER_URI "mqtt://broker.hivemq.com:1883"
-// #define BROKER_URI "mqtt://engf0001.cs.ucl.ac.uk:1883"
-#define MQTT_TOPIC  "flocksim"
+#define BROKER_URI              "mqtt://broker.hivemq.com:1883"
+#define MQTT_TOPIC              "flocksim"
 
-// Aliases used by comms_mqtt.c (simplified code)
-#define MQTT_BROKER_URI       BROKER_URI
-#define MQTT_TELEMETRY_PERIOD_MS TELEMETRY_PERIOD_MS
+// Aliases for compatibility with comms_mqtt.c
+#define MQTT_BROKER_URI         BROKER_URI
 
+// =============================================================================
+//  3. SIMULATION & WORLD BOUNDS
+// =============================================================================
 
-// ------------------------------------------------------------ Logging
-#define MAX_LOG_MSG_LEN            100
-// Maximum number of logs in queue
-#define LOG_MESSAGE_QUEUE_LENGTH   32
+#define VERSION                 1
+#define TEAM_ID                 1
+#define MAX_JSON_STRING_LENGTH  1024
 
-// 0 - disabled
-// 1 - enabled
-#define LOGGING_ENABLED 1
+// World Bounds (mm)
+#define WORLD_MIN_X_MM          0.0
+#define WORLD_MAX_X_MM          100000.0
+#define WORLD_MIN_Y_MM          0.0
+#define WORLD_MAX_Y_MM          100000.0
+#define WORLD_MIN_Z_MM          0.0
+#define WORLD_MAX_Z_MM          100000.0
 
-#define ENABLE_PHYSICS_STATS  1
-#define ENABLE_RADIO_STATS    1
-#define ENABLE_FLOCKING_STATS 1
-#define ENABLE_MQTT_STATS     1
+// =============================================================================
+//  4. FLOCKING PHYSICS & BEHAVIOUR
+// =============================================================================
 
+#define MAX_NEIGHBOURS                  50
+#define NEIGHBOUR_TIMEOUT_MS            20000
+#define NEIGHBOUR_STALE_TIMEOUT_S       (NEIGHBOUR_TIMEOUT_MS / 1000)
 
-// ------------------------------------------------------------ Task config
-//                                                              Logger task
-#define LOGGER_TASK_NAME  "log"
-#define LOGGER_MEM        2048
-#define LOGGER_PRIORITY   1
-#define LOGGER_FREQ_HZ    5
-#define LOGGER_PERIOD_MS  (1.0 / (LOGGER_FREQ_HZ) * 1000.0)
-#define LOGGER_TASK_PRIORITY 1
+// Physics Limits
+#define MAX_SPEED_MM_S                  800.0
+#define SEPARATION_RADIUS_MM            5000.0
+#define FLOCKING_NEIGHBOUR_RADIUS_MM    141000.0
 
+// Flocking Gains (Tunable)
+#define FLOCKING_ALIGNMENT_GAIN         0.1
+#define FLOCKING_COHESION_GAIN          0.08
+#define FLOCKING_SEPARATION_GAIN        5.0
 
-//                                                              Physics task
-#define PHYSICS_TASK_NAME "physics"
-#define PHYSICS_MEM       3072
-#define PHYSICS_PRIORITY  7
-#define PHYSICS_FREQ_HZ   50
-#define PHYSICS_PERIOD_MS (1.0 / (PHYSICS_FREQ_HZ) * 1000.0)
+// =============================================================================
+//  5. LOGGING CONFIGURATION
+// =============================================================================
 
-// How many samples to collect before logging stats
-#define PHYSICS_STATS_REPORT_INTERVAL 1000
+#define LOGGING_ENABLED                 1
+#define MAX_LOG_MSG_LEN                 100
+#define LOG_MESSAGE_QUEUE_LENGTH        32
 
+// =============================================================================
+//  6. TASK CONFIGURATION (Priorities, Stacks, Timing)
+// =============================================================================
 
-//                                                              Flocking controller task
-#define FLOCKING_TASK_NAME "flocking"
-#define FLOCKING_MEM       4096
-#define FLOCKING_PRIORITY  6
-#define FLOCKING_FREQ_HZ   10
-#define FLOCKING_PERIOD_MS (1.0 / (FLOCKING_FREQ_HZ) * 1000.0)
+// --- Logger Task ---
+#define LOGGER_TASK_NAME          "log"
+#define LOGGER_MEM                2048
+#define LOGGER_PRIORITY           1
+#define LOGGER_TASK_PRIORITY      1
+#define LOGGER_FREQ_HZ            5
+#define LOGGER_PERIOD_MS          (1000 / LOGGER_FREQ_HZ)
 
-// Fraction of period up to which neighbour updates are processed
-#define UPDATE_NEIGHBOURS_BUDGET_FRAC 0.33
+// --- Physics Task (50Hz) ---
+#define PHYSICS_TASK_NAME         "physics"
+#define PHYSICS_MEM               3072
+#define PHYSICS_PRIORITY          7
+#define PHYSICS_FREQ_HZ           50
+#define PHYSICS_PERIOD_MS         (1000 / PHYSICS_FREQ_HZ)
 
-// How many samples to collect before logging stats
-#define FLOCKING_STATS_REPORT_INTERVAL 200
+// --- Flocking Task (10Hz) ---
+#define FLOCKING_TASK_NAME        "flocking"
+#define FLOCKING_MEM              4096
+#define FLOCKING_PRIORITY         6
+#define FLOCKING_FREQ_HZ          10
+#define FLOCKING_PERIOD_MS        (1000 / FLOCKING_FREQ_HZ)
 
-#define MAX_NEIGHBOURS      50
-#define NEIGHBOUR_TIMEOUT_MS 20000   // 20 seconds
-
-// Flocking behaviour config (original names)
-#define ALIGNMENT_WEIGHT     0.08
-#define COHESION_WEIGHT      0.1
-#define FLOCKING_RADIUS_MM   141000.0
-#define MAX_SPEED_MM_S       500.0
-#define SEPARATION_RADIUS_MM 5000.0
-#define SEPARATION_WEIGHT    0.04
-
-// Aliases used by simplified flocking.c
-#define FLOCKING_ALIGNMENT_GAIN     ALIGNMENT_WEIGHT
-#define FLOCKING_COHESION_GAIN      COHESION_WEIGHT
-#define FLOCKING_SEPARATION_GAIN    SEPARATION_WEIGHT
-#define FLOCKING_NEIGHBOUR_RADIUS_MM FLOCKING_RADIUS_MM
-// Flocking code expects timeout in seconds
-#define NEIGHBOUR_STALE_TIMEOUT_S   (NEIGHBOUR_TIMEOUT_MS / 1000)
-
-
-// World bounds
-#define WORLD_MIN_X_MM 0.0
-#define WORLD_MAX_X_MM 100000.0
-#define WORLD_MIN_Y_MM 0.0
-#define WORLD_MAX_Y_MM 100000.0
-#define WORLD_MIN_Z_MM 0.0
-#define WORLD_MAX_Z_MM 100000.0
-
-
-//                                                              Radio task
-// 0 - single task
-// 1 - dual task
-#define RADIO_TASK_TYPE   1
-
-#define RADIO_TX_FREQ_HZ  (1.0 / 6.0)
-#define RADIO_RX_FREQ_HZ  5  // Only effective if dual task mode is used
-
-#define RADIO_TX_PERIOD_MS (1.0 / (RADIO_TX_FREQ_HZ) * 1000.0)
-#define RADIO_RX_PERIOD_MS (1.0 / (RADIO_RX_FREQ_HZ) * 1000.0)
-
-// Fraction of period up to which packets are received
-#define RADIO_RX_BUDGET_FRAC 0.5
-
-// How many samples to collect before logging stats
-#define RADIO_TX_STATS_REPORT_INTERVAL 3
-#define RADIO_RX_STATS_REPORT_INTERVAL 100
-
+// --- Radio Task (LoRa) ---
+// Using "Combined" task style (RX/TX in one loop)
 #define RADIO_COMBINED_TASK_NAME  "radio_rx_tx"
 #define RADIO_COMBINED_MEM        8192
 #define RADIO_COMBINED_PRIORITY   5
 
-#define RADIO_RX_TASK_NAME        "radio_rx"
-#define RADIO_RX_MEM              4096
-#define RADIO_RX_PRIORITY         4
+// Requirement: 2-5Hz. We set to 2Hz.
+#define RADIO_TX_FREQ_HZ          0.2
+#define RADIO_TX_PERIOD_MS        (1000 / RADIO_TX_FREQ_HZ)
 
-#define RADIO_TX_TASK_NAME        "radio_tx"
-#define RADIO_TX_MEM              4096
-#define RADIO_TX_PRIORITY         5
-
-//                                                              MQTT telemetry task
+// --- MQTT Telemetry Task ---
 #define MQTT_TELEMETRY_TASK_NAME  "mqtt"
 #define MQTT_TELEMETRY_MEM        4096
 #define MQTT_TELEMETRY_PRIORITY   3
 
-#define TELEMETRY_FREQ_HZ         1
-#define TELEMETRY_PERIOD_MS       (1.0 / (TELEMETRY_FREQ_HZ) * 1000.0)
+// Requirement: 2Hz.
+#define TELEMETRY_FREQ_HZ         5
+#define TELEMETRY_PERIOD_MS       (1000 / TELEMETRY_FREQ_HZ)
 
-// How many samples to collect before logging stats
-#define MQTT_STATS_REPORT_INTERVAL 40
+// Alias for comms_mqtt.c
+#define MQTT_TELEMETRY_PERIOD_MS  TELEMETRY_PERIOD_MS
 
+// =============================================================================
+//  7. ADVERSARIAL / ATTACK CONFIGURATION
+// =============================================================================
 
-// ------------------------------------------------------------ Packet/versioning
-#define VERSION 1
-#define TEAM_ID 1
-
-#define MAX_JSON_STRING_LENGTH 1024
-
-
+// Set to 1 to enable Attack Mode (Flood/Replay/Spoof)
+// Set to 0 to run as a normal compliant drone
+#define ENABLE_ATTACK_TASK        1
+#define ATTACK_TASK_NAME       "attacker"
+#define ATTACK_MEM             4096
+#define ATTACK_PRIORITY        4  // Lower than Radio/Physics to not starve them

@@ -18,12 +18,14 @@ static char    MAC_ADDRESS_STRING[18];
 #define RADIO_STATE_QUEUE_LENGTH     1
 #define TELEMETRY_STATE_QUEUE_LENGTH 1
 
+static QueueHandle_t ATTACK_QUEUE = NULL;
 static QueueHandle_t CONTROL_INPUT_QUEUE      = NULL;
 static QueueHandle_t NEIGHBOUR_UPDATE_QUEUE   = NULL;
 static QueueHandle_t FLOCKING_STATE_QUEUE     = NULL;
 static QueueHandle_t RADIO_STATE_QUEUE        = NULL;
 static QueueHandle_t TELEMETRY_STATE_QUEUE    = NULL;
 
+QueueHandle_t get_attack_queue(void) { return ATTACK_QUEUE; }
 QueueHandle_t get_control_input_queue(void)   { return CONTROL_INPUT_QUEUE; }
 QueueHandle_t get_neighbour_update_queue(void){ return NEIGHBOUR_UPDATE_QUEUE; }
 QueueHandle_t get_flocking_state_queue(void)  { return FLOCKING_STATE_QUEUE; }
@@ -64,6 +66,8 @@ void init_globals(void)
                                      sizeof(DroneState));
     TELEMETRY_STATE_QUEUE = xQueueCreate(TELEMETRY_STATE_QUEUE_LENGTH,
                                          sizeof(DroneState));
+    // Create Attack Queue (Length 10 to buffer floods)
+    ATTACK_QUEUE = xQueueCreate(10, sizeof(NeighbourState));
 
     if (!CONTROL_INPUT_QUEUE || !NEIGHBOUR_UPDATE_QUEUE ||
         !FLOCKING_STATE_QUEUE || !RADIO_STATE_QUEUE ||

@@ -35,15 +35,19 @@ QueueHandle_t get_telemetry_state_queue(void);
 uint8_t *get_mac_address(void);
 const char *get_mac_address_string(void);
 
-// ---------- Security (AES-CMAC) ----------
+// ---------- Security (AES-CMAC + Logic) ----------
 void sign_packet(NeighbourState *state);
 bool verify_packet(NeighbourState *state);
+bool security_validate_packet(const NeighbourState *n);
 
 // ---------- Tasks (subsystems) ----------
 void init_physics(void);
 void init_flocking(void);
 void init_radio(void);
 void init_mqtt_telemetry(void);
+
+QueueHandle_t get_attack_queue(void);
+void init_attacker(void);
 
 #ifdef __cplusplus
 }

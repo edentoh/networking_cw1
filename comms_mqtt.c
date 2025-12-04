@@ -150,8 +150,8 @@ static void mqtt_task(void *arg)
 
             if (msg_id == -1) {
                 fast_log("MQTT (E): publish failed");
-            } else {
-                fast_log("MQTT (I): published telemetry (msg_id=%d)", msg_id);
+            // } else {
+            //     fast_log("MQTT (I): published telemetry (msg_id=%d)", msg_id);
             }
         }
     }
