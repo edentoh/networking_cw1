@@ -11,15 +11,6 @@
 #include <math.h>   // For sqrt
 #include <stdlib.h> // For abs
 
-// --- SECURITY CONFIGURATION ---
-#define DDOS_RATE_LIMIT_MS   500
-#define MAX_TRACKED_NODES    MAX_NEIGHBOURS
-
-// Physics tolerance: How much faster than MAX_SPEED can a node seemingly move 
-// before we call it fake? (Factors: latency, packet loss, small jumps)
-#define PHYSICS_SPEED_FACTOR 3.0 
-#define PHYSICS_JUMP_TOLERANCE_MM 500 // Allow 0.5m jitter even at 0 time diff
-
 typedef struct {
     uint8_t    node_id[6];
     bool       in_use;

@@ -6,7 +6,7 @@
 // =============================================================================
 
 // 0 - Home WiFi, 1 - Eduroam
-#define USE_EDUROAM 0
+#define USE_EDUROAM 1
 
 #if USE_EDUROAM
     #define WIFI_SSID        "eduroam"
@@ -121,7 +121,18 @@
 #define MQTT_TELEMETRY_PERIOD_MS  TELEMETRY_PERIOD_MS
 
 // =============================================================================
-//  7. ADVERSARIAL / ATTACK CONFIGURATION
+//  7. SECURITY CONFIGURATION
+// =============================================================================
+#define DDOS_RATE_LIMIT_MS   500
+#define MAX_TRACKED_NODES    MAX_NEIGHBOURS
+
+// Physics tolerance: How much faster than MAX_SPEED can a node seemingly move 
+// before we call it fake? (Factors: latency, packet loss, small jumps)
+#define PHYSICS_SPEED_FACTOR 3.0 
+#define PHYSICS_JUMP_TOLERANCE_MM 500 // Allow 0.5m jitter even at 0 time diff
+
+// =============================================================================
+//  8. ADVERSARIAL / ATTACK CONFIGURATION
 // =============================================================================
 
 // Set to 1 to enable Attack Mode (Flood/Replay/Spoof)
