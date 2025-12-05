@@ -4,59 +4,79 @@
 #include "esp_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"  // Required for Semaphore
 #include "sys/time.h"
 #include <stdlib.h>
 
+// Global semaphore handle
+static SemaphoreHandle_t SNTP_SEM = NULL;
+
+// -----------------------------------------------------------------------------
+// Callback: Triggered by the system when time is successfully updated
+// -----------------------------------------------------------------------------
+void time_sync_notification_cb(struct timeval *tv)
+{
+    (void)tv;
+    // fast_log("SNTP (I): Notification received!"); // Optional debug
+    if (SNTP_SEM) {
+        xSemaphoreGive(SNTP_SEM); // Wake up the waiting task
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Sync function using Semaphore
+// -----------------------------------------------------------------------------
 esp_err_t sync_time(void)
 {
     fast_log("SNTP (I): init...");
 
-    // 1. Clean stop if it was already running
-    esp_sntp_stop();
+    // 1. Create the binary semaphore (initially empty)
+    SNTP_SEM = xSemaphoreCreateBinary();
+    if (SNTP_SEM == NULL) {
+        fast_log("SNTP (E): No memory for semaphore");
+        return ESP_OK; // Continue anyway
+    }
 
-    // 2. Set operating mode
+    esp_sntp_stop();
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
 
-    // 3. Configure multiple servers for redundancy
-    // Server 0: Generic pool
-    esp_sntp_setservername(0, "pool.ntp.org");
-    // Server 1: Europe pool (your original)
-    esp_sntp_setservername(1, "europe.pool.ntp.org");
-    // Server 2: Google Public NTP (very reliable)
-    esp_sntp_setservername(2, "time.google.com");
+    // 2. Register the callback function
+    // This tells the SNTP library: "Call this function when you get the time"
+    sntp_set_time_sync_notification_cb(time_sync_notification_cb);
 
-    // 4. Initialize
+    // Configure Servers (IP strings to bypass DNS)
+    esp_sntp_setservername(0, "216.239.35.0"); // Google
+    esp_sntp_setservername(1, "162.159.200.1"); // Cloudflare
+
     esp_sntp_init();
 
-    // 5. Set Timezone to UTC/GMT
     setenv("TZ", "GMT0", 1);
     tzset();
 
-    int retries = 0;
-    const int max_retries = 20; // Increased to ~60 seconds total
+    fast_log("SNTP (W): waiting for sync (semaphore)...");
 
-    while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED &&
-           retries < max_retries) {
-        
-        // Log progress every 10 seconds (every 5th retry)
-        if (retries % 5 == 0 && retries > 0) {
-            fast_log("SNTP (W): waiting for sync... (%d/%d)", retries, max_retries);
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        retries++;
-    }
-
-    if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
-        fast_log("SNTP (I): time synced");
+    // 3. Block and Wait
+    // The task sleeps here. It will wake up ONLY if:
+    // A) The callback gives the semaphore (Success)
+    // B) 20 seconds pass (Timeout)
+    if (xSemaphoreTake(SNTP_SEM, pdMS_TO_TICKS(20000)) == pdTRUE) {
+        fast_log("SNTP (I): time synced, current time: %s", ctime((const time_t[]){time(NULL)}));
         return ESP_OK;
     }
 
-    fast_log("SNTP (E): failed to sync time after %d retries, using local time",
-             max_retries);
+    // 4. Handle Timeout
+    // Check one last time in case the semaphore was missed (rare race condition)
+    if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
+        fast_log("SNTP (I): time synced (status check)");
+        return ESP_OK;
+    }
+
+    fast_log("SNTP (E): sync timeout, using local time");
     
-    // IMPORTANT: still return ESP_OK so the rest of the system can run,
-    // even if timestamps are wrong (they will start from 0 or last saved time).
+    // Clean up semaphore (optional, but good practice if not used again)
+    vSemaphoreDelete(SNTP_SEM);
+    SNTP_SEM = NULL;
+
     return ESP_OK;
 }
 
@@ -67,7 +87,6 @@ void get_current_unix_time(uint32_t* ts_s, uint16_t* ts_ms)
         *ts_s  = tv.tv_sec;
         *ts_ms = tv.tv_usec / 1000;
     } else {
-        fast_log("TIME (E): gettimeofday failed");
         *ts_s = 0;
         *ts_ms = 0;
     }
