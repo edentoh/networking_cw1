@@ -11,7 +11,8 @@ idf_component_register(
         "wifi_connect.c"
         "sntp_time.c"
         "globals.c"
-        "attacker.c"      # <--- ADD THIS LINE
+        "attacker.c"
+        "monitoring.c"
     INCLUDE_DIRS "."
     REQUIRES jgromes__radiolib esp_driver_gpio esp_timer mqtt esp_wifi esp_netif nvs_flash esp_event wpa_supplicant lwip
 )

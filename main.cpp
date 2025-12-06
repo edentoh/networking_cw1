@@ -6,6 +6,7 @@ extern "C" {
 
 #include "config.h"
 #include "tasks.h"
+#include "monitoring.h"
 }
 
 // Ensure init_attacker is declared if tasks.h doesn't have it yet
@@ -39,6 +40,9 @@ extern "C" void app_main(void)
     fast_log("MAIN (I): Attack mode disabled (Normal Operation)");
 #endif
     // -----------------------------
+
+    // Start Monitoring
+    monitor_init();
 
     fast_log("MAIN (I): all tasks started");
 }

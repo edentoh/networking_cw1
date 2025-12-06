@@ -1,6 +1,7 @@
 // main/comms_lora.cpp
 #include "EspHal.h"
 #include "RadioLib.h"
+#include "monitoring.h" // <--- Added
 
 extern "C" {
 #include "config.h"
@@ -38,7 +39,6 @@ static SemaphoreHandle_t RX_SEM = nullptr;
 static uint16_t PACKET_SEQ = 0;
 
 static volatile bool s_transmitting = false; 
-// NEW: Timer to ignore our own echoes
 static TickType_t last_tx_end_tick = 0; 
 
 extern "C" void IRAM_ATTR give_rx_semaphore(void)
@@ -69,21 +69,19 @@ static void radio_task(void *arg)
 
     while (true) {
         
-        // ----------------------------------------------------------------
         // 1. ATTACK INJECTION
-        // ----------------------------------------------------------------
         NeighbourState attack_pkt;
         if (xQueueReceive(attack_q, &attack_pkt, 0) == pdTRUE) {
             int16_t res = lora.startTransmit((uint8_t*)&attack_pkt, sizeof(attack_pkt));
             if (res == RADIOLIB_ERR_NONE) {
                 s_transmitting = true;
+                monitor_radio_state(true, 50); // Log Energy
             }
-            // Wait for Attack TX to finish (Blocking logic for attack consistency)
             while(s_transmitting) {
                 if (xSemaphoreTake(RX_SEM, pdMS_TO_TICKS(100)) == pdTRUE) {
                     if (s_transmitting) {
                          s_transmitting = false;
-                         last_tx_end_tick = xTaskGetTickCount(); // Record time
+                         last_tx_end_tick = xTaskGetTickCount(); 
                          lora.startReceive();
                     }
                 }
@@ -91,28 +89,28 @@ static void radio_task(void *arg)
             continue;
         }
 
-        // ----------------------------------------------------------------
         // 2. NORMAL RADIO LOOP
-        // ----------------------------------------------------------------
         TickType_t now = xTaskGetTickCount();
         TickType_t wait_ticks = (next_tx > now) ? (next_tx - now) : 0;
+
+        // --- MONITOR START ---
+        monitor_task_start(MON_TASK_RADIO);
 
         if (xSemaphoreTake(RX_SEM, wait_ticks) == pdTRUE) {
             
             if (s_transmitting) {
                 // TX DONE
                 s_transmitting = false;
-                last_tx_end_tick = xTaskGetTickCount(); // Record time
+                last_tx_end_tick = xTaskGetTickCount(); 
                 lora.startReceive();
                 
             } else {
                 // RX DONE
                 
-                // --- ANTI-ECHO CHECK ---
-                // If we just finished transmitting < 50ms ago, this is likely our own echo.
-                // Ignore it completely.
+                // Anti-Echo Check
                 if (xTaskGetTickCount() - last_tx_end_tick < pdMS_TO_TICKS(50)) {
                     lora.startReceive();
+                    monitor_task_end(MON_TASK_RADIO);
                     continue;
                 }
 
@@ -121,31 +119,32 @@ static void radio_task(void *arg)
 
                 if (r == RADIOLIB_ERR_NONE) {
                     
-                    // --- STEP 1: Ignore Own MAC ---
+                    // Ignore Own MAC
                     if (memcmp(rx.node_id, get_mac_address(), 6) == 0) {
                         lora.startReceive();
+                        monitor_task_end(MON_TASK_RADIO);
                         continue;
                     }
 
-                    // --- STEP 2: Verify Crypto ---
+                    // Verify Crypto
                     if (!verify_packet(&rx)) {
-                        // Suppress logs for specific known spoof MAC to clean up output
-                        // (Optional, but helps if Anti-Echo misses one)
                         uint8_t spoof_mac[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01};
                         if (memcmp(rx.node_id, spoof_mac, 6) != 0) {
                              fast_log("RADIO (W): Bad MAC/Sig from %s", format_mac(rx.node_id));
                         }
                         lora.startReceive();
+                        monitor_task_end(MON_TASK_RADIO);
                         continue;
                     }
 
-                    // --- STEP 3: Security Logic ---
+                    // Security Logic (Rate Limit / Physics)
                     if (!security_validate_packet(&rx)) {
                         lora.startReceive();
+                        monitor_task_end(MON_TASK_RADIO);
                         continue;
                     }
 
-                    // --- STEP 4: Valid ---
+                    // Valid
                     log_radio_packet("RX", &rx);
                     xQueueSend(neigh_q, &rx, 0);
 
@@ -168,6 +167,7 @@ static void radio_task(void *arg)
             if (res == RADIOLIB_ERR_NONE) {
                 log_neighbour_state("RADIO TX ", &tx);
                 s_transmitting = true;
+                monitor_radio_state(true, 50); // Log Energy (approx 50ms)
             } else {
                 fast_log("RADIO (E): StartTransmit failed (%d)", res);
                 lora.startReceive();
@@ -178,6 +178,9 @@ static void radio_task(void *arg)
                 next_tx += tx_period;
             }
         }
+
+        // --- MONITOR END ---
+        monitor_task_end(MON_TASK_RADIO);
     }
 }
 

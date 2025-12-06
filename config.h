@@ -69,7 +69,7 @@
 // =============================================================================
 
 #define LOGGING_ENABLED                 1
-#define MAX_LOG_MSG_LEN                 100
+#define MAX_LOG_MSG_LEN                 120
 #define LOG_MESSAGE_QUEUE_LENGTH        32
 
 // =============================================================================
@@ -137,7 +137,15 @@
 
 // Set to 1 to enable Attack Mode (Flood/Replay/Spoof)
 // Set to 0 to run as a normal compliant drone
-#define ENABLE_ATTACK_TASK      0
+#define ENABLE_ATTACK_TASK      1
 #define ATTACK_TASK_NAME       "attacker"
 #define ATTACK_MEM             4096
 #define ATTACK_PRIORITY        4  // Lower than Radio/Physics to not starve them
+
+// =============================================================================
+// MONITORING CONFIGURATION
+// =============================================================================
+#define MONITOR_REPORT_PERIOD_MS 10000  // Print report every 10 seconds
+#define EST_CURRENT_BASE_MA      100   // ESP32 + WiFi (Active)
+#define EST_CURRENT_LORA_RX_MA   12    // SX1276 RX
+#define EST_CURRENT_LORA_TX_MA   45    // SX1276 TX (14dBm)

@@ -118,12 +118,12 @@ bool security_validate_packet(const NeighbourState *n)
     // Note: If sender rebooted, seq resets. This logic drops packets until 
     // seq catches up or we timeout the entry. Simple fix: If seq drops drastically
     // but time is valid, maybe reset? For now, strict check:
-    if (n->seq_number <= entry->last_seq && 
-       (entry->last_seq - n->seq_number) < 1000) { // Not a wrap-around
-        fast_log("SEC (W): Replay/Old Seq %u <= %u from %s", 
-                 n->seq_number, entry->last_seq, format_mac(n->node_id));
-        return false;
-    }
+    // if (n->seq_number <= entry->last_seq && 
+    //    (entry->last_seq - n->seq_number) < 1000) { // Not a wrap-around
+    //     fast_log("SEC (W): Replay/Old Seq %u <= %u from %s", 
+    //              n->seq_number, entry->last_seq, format_mac(n->node_id));
+    //     return false;
+    // }
 
     uint64_t time_old = to_ms(entry->last_ts_s, entry->last_ts_ms);
     uint64_t time_new = to_ms(n->ts_s, n->ts_ms);

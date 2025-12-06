@@ -1,6 +1,7 @@
 // main/physics.c
 #include "tasks.h"
 #include "config.h"
+#include "monitoring.h" // <--- Added
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -33,27 +34,24 @@ static void physics_task(void *arg)
 
     while (true) {
         vTaskDelayUntil(&next_wake, period_ticks);
-
-// ... inside physics_task while(true) loop ...
+        
+        // --- MONITOR START ---
+        monitor_task_start(MON_TASK_PHYSICS);
 
         // New command?
         if (xQueueReceive(control_q, &u, 0) == pdTRUE) {
-            // Don't set velocity directly. Store the target.
-            // We can just use 'u' as the target reference.
+            // Commands applied below
         }
 
         double dt = PHYSICS_PERIOD_MS / 1000.0;
         
         // --- SMOOTHING / INERTIA ---
-        // Alpha determines responsiveness. 
-        // 0.1 = heavy/slow, 0.5 = snappy, 1.0 = instant (current behavior)
         const double alpha = 0.2; 
 
         s.vx_mm_s += (u.target_vx_mm_s - s.vx_mm_s) * alpha;
         s.vy_mm_s += (u.target_vy_mm_s - s.vy_mm_s) * alpha;
         s.vz_mm_s += (u.target_vz_mm_s - s.vz_mm_s) * alpha;
         
-        // Yaw rate is usually snappy, but we can smooth it too if desired
         s.yaw_rate_cd_s += (u.target_yaw_rate_cd_s - s.yaw_rate_cd_s) * alpha;
 
         // Position Integration
@@ -74,7 +72,9 @@ static void physics_task(void *arg)
         xQueueOverwrite(flocking_q,  &s);
         xQueueOverwrite(radio_q,     &s);
         xQueueOverwrite(telemetry_q, &s);
-        // physics.c, inside while(true) after xQueueOverwrite(...)
+
+        // --- MONITOR END ---
+        monitor_task_end(MON_TASK_PHYSICS);
     }
 }
 

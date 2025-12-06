@@ -1,6 +1,7 @@
 // main/flocking.c
 #include "tasks.h"
 #include "config.h"
+#include "monitoring.h" // <--- Added
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -73,10 +74,12 @@ static void update_neighbour_table(const NeighbourState *n)
         return;
     }
 
-    // --- REMOVED SECURITY CHECK HERE ---
-    // It is now handled in comms_lora.cpp to save queue space
-    // and prevent double-counting rate limits.
-    // -----------------------------------
+    // --- MONITORING: Report Packet ---
+    monitor_report_packet(n->seq_number, (uint8_t*)n->node_id);
+
+    // --- SECURITY NOTE ---
+    // Security checks are handled in Radio Task (comms_lora.cpp)
+    // before the packet reaches this queue.
 
     int first_empty = -1;
     uint32_t now_s; uint16_t now_ms;
@@ -103,7 +106,6 @@ static void update_neighbour_table(const NeighbourState *n)
     NEIGHBOUR_TABLE[idx].neighbour_state = *n;
 }
 
-// ... (Rest of file: compute_control, flocking_task, init_flocking remain unchanged) ...
 static ControlInput compute_control(const DroneState *self)
 {
     ControlInput u = {
@@ -134,7 +136,7 @@ static ControlInput compute_control(const DroneState *self)
         ++count;
         double dist = sqrt(dist2) + 1e-6;
 
-        // --- Improved Separation (Distance Weighted) ---
+        // Separation (Distance Weighted)
         double nx = -dx / dist;
         double ny = -dy / dist;
         double nz = -dz / dist;
@@ -233,10 +235,13 @@ static void flocking_task(void *arg)
     
     // Timer for printing the table (counts task ticks)
     int table_print_timer = 0;
-    const int PRINT_INTERVAL_TICKS = 5 * FLOCKING_FREQ_HZ; // 5 seconds * 10Hz = 50
+    const int PRINT_INTERVAL_TICKS = 5 * FLOCKING_FREQ_HZ; 
 
     while (true) {
         vTaskDelayUntil(&next, period);
+        
+        // --- MONITOR START ---
+        monitor_task_start(MON_TASK_FLOCKING);
 
         prune_stale_neighbours();
 
@@ -253,18 +258,20 @@ static void flocking_task(void *arg)
 
             static int tick = 0;
             tick++;
-            if (tick % 20 == 0) {  // every 10 is 1s(10hz)
-                // Keep the own state log
+            if (tick % 20 == 0) { 
                 log_drone_state("FLOCKING OWN", &self);
             }
         }
 
-        // 3. Periodic Table Dump (Every 5 seconds)
+        // 3. Periodic Table Dump
         table_print_timer++;
         if (table_print_timer >= PRINT_INTERVAL_TICKS) {
             print_neighbour_table_dump();
             table_print_timer = 0;
         }
+
+        // --- MONITOR END ---
+        monitor_task_end(MON_TASK_FLOCKING);
     }
 }
 
