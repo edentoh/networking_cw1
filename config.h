@@ -10,12 +10,12 @@
 
 #if USE_EDUROAM
     #define WIFI_SSID        "eduroam"
-    #define EDUROAM_IDENTITY "zcabbzt@ucl.ac.uk"
-    #define EDUROAM_USERNAME "zcabbzt@ucl.ac.uk"
-    #define EDUROAM_PASSWORD "EdenT@h313032bz."
+    #define EDUROAM_IDENTITY ""
+    #define EDUROAM_USERNAME ""
+    #define EDUROAM_PASSWORD ""
 #else
-    #define WIFI_SSID        "EE-32GFKZ"
-    #define WIFI_PASSWORD    "a9J7Fy9Wd6yJUDi9"
+    #define WIFI_SSID        ""
+    #define WIFI_PASSWORD    ""
 #endif
 
 #define WIFI_CONNECT_TIMEOUT_MS 30000
@@ -148,4 +148,5 @@
 #define MONITOR_REPORT_PERIOD_MS 10000  // Print report every 10 seconds
 #define EST_CURRENT_BASE_MA      100   // ESP32 + WiFi (Active)
 #define EST_CURRENT_LORA_RX_MA   12    // SX1276 RX
+
 #define EST_CURRENT_LORA_TX_MA   45    // SX1276 TX (14dBm)
